@@ -17,8 +17,8 @@ function Main() {
             <button onClick={() => navigate('/discretizacion-fronteras')}>
                 Discretización
             </button>
-            <button onClick={() => navigate('/')}>
-                Handler
+            <button onClick={() => navigate('/k-nn')}>
+                K-NN
             </button>
             <button onClick={() => navigate('/')}>
                 Handler

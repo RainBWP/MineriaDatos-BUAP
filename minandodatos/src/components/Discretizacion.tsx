@@ -21,7 +21,7 @@ function Discretizacion() {
   const [showSomeData, setShowSomeData] = React.useState(false);
   const [showData, setShowData] = React.useState(false);
   const [showDiscretized, setShowDiscretized] = React.useState(false);
-  const [data, setData] = React.useState<number[][]>([]);
+  const [, setData] = React.useState<number[][]>([]);
   const [showFormatedData, setShowNotFormattedData] = React.useState(true);
   const [showOnlyThisData, setShowOnlyThisData] = React.useState<string>('');
   const [filteredData, setFilteredData] = React.useState<number[][]>([]);
@@ -88,7 +88,7 @@ function Discretizacion() {
   };
   // Guardar archivo
   const saveFile = () => {
-    const data = params.data.map((row) => row.join(',')).join('\n');
+    const data = params.discretizedData.map((row) => row.join(',')).join('\n');
     const blob = new Blob([data], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -430,7 +430,7 @@ function Discretizacion() {
 
 
       {/* Mostrar datos discretizados */}
-      {showFormatedData && showDiscretized && (
+      {showFormatedData && showDiscretized && !showSomeData && (
         <div>
           <h2>Datos Discretizados</h2>
           <div>
@@ -440,14 +440,14 @@ function Discretizacion() {
                   <th>Conjunto</th>
                   {params.discretizedData[0] &&
                     params.discretizedData[0].map((_, i) => (
-                      <th key={i}>Atributo {i + 1}</th>
+                      <th key={i}>A{i + 1}</th>
                     ))}
                 </tr>
               </thead>
               <tbody>
                 {params.discretizedData.map((row, index) => (
                   <tr key={index}>
-                    <td>{index + 1}</td>
+                    <td>{index}</td>
                     {row.map((value, i) => (
                       <td key={i}>
                         {value}
@@ -470,7 +470,7 @@ function Discretizacion() {
               <tbody>
                 {params.cutPoints.map((points, index) => (
                   <tr key={index}>
-                    <td>Atributo {index + 1}</td>
+                    <td>A{index + 1}</td>
                     <td>{points.map(p => p.toFixed(2)).join(', ') || 'N/A'}</td>
                   </tr>
                 ))}
@@ -480,7 +480,7 @@ function Discretizacion() {
         </div>
       )}
       {/* Mostrar datos discretizados sin formato */}
-      {showDiscretized && !showFormatedData && (
+      {showDiscretized && !showFormatedData && !showSomeData && (
         <div>
           <h2>Datos Discretizados</h2>
           {params.discretizedData.map((row, index) => (
@@ -519,7 +519,7 @@ function Discretizacion() {
               <tbody>
                 {params.data.map((row, index) => (
                   <tr key={index}>
-                    <td>{index + 1}</td>
+                    <td>{index}</td>
                     {row.map((value, i) => (
                       <td key={i}>
                         {value}

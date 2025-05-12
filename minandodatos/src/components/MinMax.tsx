@@ -20,7 +20,7 @@ function MinMax() {
   const [showSomeData, setShowSomeData] = React.useState(false);
   const [showData, setShowData] = React.useState(false);
   const [showMinMax, setShowMinMax] = React.useState(false);
-  const [data, setData] = React.useState<number[][]>([]);
+  const [, setData] = React.useState<number[][]>([]);
   const [showFormatedData, setShowNotFormattedData] = React.useState(true);
   const [showOnlyThisData, setShowOnlyThisData] = React.useState<string>('');
   const [filteredData, setFilteredData] = React.useState<number[][]>([]);
@@ -96,7 +96,7 @@ function MinMax() {
   };
   // Guardar archivo
   const saveFile = () => {
-    const data = paramsMinMax.data.map((row) => row.join(',')).join('\n');
+    const data = paramsMinMax.evaluatedData.map((row) => row.join(',')).join('\n');
     const blob = new Blob([data], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -106,15 +106,6 @@ function MinMax() {
     URL.revokeObjectURL(url);
   };
 
-  const saveFileOmitidas = () => {
-    const blob = new Blob([JSON.stringify(paramsMinMax.rawData)], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'minmax.txt';
-    a.click();
-    URL.revokeObjectURL(url);
-  };
 
   const runMinMax = () => {
     const minValue = paramsMinMax.minValue;
@@ -178,7 +169,6 @@ function MinMax() {
           id="dataFile" 
           accept=".txt"
           onChange={handleFileChange}
-          
         />
       </div>
       <div className='buttons'>
@@ -351,7 +341,7 @@ function MinMax() {
         )
       } 
       {
-        showFormatedData && showMinMax && showData && (
+        showFormatedData && showMinMax && showData && !showSomeData && (
           <div>
             <h2>Resultado de MinMax</h2>
             <div>
@@ -361,14 +351,14 @@ function MinMax() {
                     <th>Conjunto</th>
                     {paramsMinMax.quantityConjuntos > 0 &&
                       Array.from({ length: paramsMinMax.maxQuantityElements }, (_, i) => (
-                      <th key={i}>Valor {i + 1}</th>
+                      <th key={i}>V{i + 1}</th>
                       ))}
                   </tr>
                 </thead>
                 <tbody>
                   {paramsMinMax.evaluatedData.map((row, index) => (
                     <tr key={index}>
-                      <td>{index + 1}</td>
+                      <td>{index}</td>
                       {row.map((value, i) => (
                         <td key={i}>
                           {value}
@@ -397,7 +387,7 @@ function MinMax() {
                 <th>Conjunto</th>
                 {paramsMinMax.quantityConjuntos > 0 &&
                   Array.from({ length: paramsMinMax.maxQuantityElements }, (_, i) => (
-                  <th key={i}>Valor {i + 1}</th>
+                  <th key={i}>V{i + 1}</th>
                   ))}
                   <th>Minimo</th>
                   <th>Maximo</th>
@@ -407,7 +397,7 @@ function MinMax() {
             <tbody>
               {paramsMinMax.data.map((row, index) => (
                 <tr key={index}>
-                  <td>{index + 1}</td>
+                  <td>{index}</td>
                   {row.map((value, i) => (
                     <td key={i}>
                       {value}
