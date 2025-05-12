@@ -1,0 +1,39 @@
+// default page
+import { useNavigate } from 'react-router-dom';
+
+
+function Main() {
+  const navigate = useNavigate();
+
+
+
+    return (
+        <div>
+        <h1>Proyecto Mineria de Datos</h1>
+        <div className='buttons'>
+            <button onClick={() => navigate('/min-max')}>
+                Min Max
+            </button>
+            <button onClick={() => navigate('/discretizacion-fronteras')}>
+                Discretización
+            </button>
+            <button onClick={() => navigate('/')}>
+                Handler
+            </button>
+            <button onClick={() => navigate('/')}>
+                Handler
+            </button>
+            <button onClick={() => navigate('/')}>
+                Handler
+            </button>
+            <button onClick={() => navigate('/')}>
+                Handler
+            </button>
+            <button onClick={() => navigate('/')}>
+                Handler
+            </button>
+        </div>
+        </div>
+    );
+}
+export default Main;
