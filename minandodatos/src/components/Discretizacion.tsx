@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 
+// Define the interface for the discretization parameters
 interface paramsDiscretization {
   data: number[][];
   rawData: number[][];
@@ -11,9 +12,14 @@ interface paramsDiscretization {
   minData: number[];
   maxData: number[];
   cutPoints: number[][];
-  rowOmmited: number;
-  columnOmmited: number;
   targetColumn: number;
+  normalizedColumns: number[]; // Keep track of already normalized columns
+}
+
+// AttributeValueAndClass record similar to Java implementation
+interface AttributeValueAndClass {
+  attributeValue: number;
+  classLabel: number;
 }
 
 function Discretizacion() {
@@ -22,7 +28,7 @@ function Discretizacion() {
   const [showData, setShowData] = React.useState(false);
   const [showDiscretized, setShowDiscretized] = React.useState(false);
   const [, setData] = React.useState<number[][]>([]);
-  const [showFormatedData, setShowNotFormattedData] = React.useState(true);
+  const [showFormatedData, setShowNotFormattedData] = React.useState(false);
   const [showOnlyThisData, setShowOnlyThisData] = React.useState<string>('');
   const [filteredData, setFilteredData] = React.useState<number[][]>([]);
   const [params, setParams] = React.useState<paramsDiscretization>({
@@ -35,9 +41,8 @@ function Discretizacion() {
     minData: [],
     maxData: [],
     cutPoints: [],
-    rowOmmited: 0,
-    columnOmmited: 0,
     targetColumn: 0,
+    normalizedColumns: [], // Initialize the array
   });
 
   // Manejar la carga del archivo
@@ -49,12 +54,39 @@ function Discretizacion() {
         const fileContent = event.target?.result;
         if (typeof fileContent === 'string') {
           const rows = fileContent.split('\n');
-          const parsedData = rows.map((row) =>
-            row.split(',').map((num) => parseFloat(num))
+          
+          // Check for already normalized columns (header values > 1)
+          const headerRow = rows[0].split(',').map(val => parseFloat(val));
+          const normalizedColumns = headerRow
+            .map((val, idx) => val > 1 ? idx : -1)
+            .filter(idx => idx !== -1);
+          
+          // Separate header from data
+          const dataRows = rows.slice(1);
+          
+          // Calculate min and max values for each data row - excluding normalized columns
+          const rowMinMaxValues = dataRows.map(row => {
+            const rowValues = row.split(',').map(val => parseFloat(val));
+            
+            // Filter values that are not in normalized columns
+            const filteredValues = rowValues.filter((val, idx) => 
+              !normalizedColumns.includes(idx) && !isNaN(val)
+            );
+            
+            return {
+              min: Math.min(...filteredValues),
+              max: Math.max(...filteredValues)
+            };
+          });
+          
+          const minData = rowMinMaxValues.map(item => item.min);
+          const maxData = rowMinMaxValues.map(item => item.max);
+          
+          // Parse all data including header
+          const parsedData = rows.map(row =>
+            row.split(',').map(num => parseFloat(num))
           );
-          // console.log('parsedData', parsedData);
-          const minData = parsedData.map((row) => Math.min(...row));
-          const maxData = parsedData.map((row) => Math.max(...row));
+          
           setData(parsedData);
           setParams({
             ...params,
@@ -64,10 +96,10 @@ function Discretizacion() {
             maxQuantityElements: parsedData[0].length,
             minData: minData,
             maxData: maxData,
-            cutPoints: Array(parsedData.length).fill([])
+            normalizedColumns: normalizedColumns,
+            cutPoints: Array(parsedData[0].length).fill([])
           });
           setShowData(true);
-          // console.log('Archivo cargado:', paramsMinMax);
         } else {
           console.error('Error al leer el archivo');
         }
@@ -86,6 +118,7 @@ function Discretizacion() {
       [name]: parsedValue,
     });
   };
+  
   // Guardar archivo
   const saveFile = () => {
     const data = params.discretizedData.map((row) => row.join(',')).join('\n');
@@ -93,13 +126,19 @@ function Discretizacion() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'evaluated_discretized.txt';
+    a.download = 'discretized_data.txt';
     a.click();
     URL.revokeObjectURL(url);
   };
 
+  // --- Implementación de las funciones de discretización ---
+
   // Calcular la entropía de un conjunto de valores
   const calculateEntropy = (values: number[]) => {
+    if (!values || values.length === 0) {
+      return 0;
+    }
+
     const valueCounts: { [key: number]: number } = {};
 
     // Contar la frecuencia de cada valor
@@ -124,23 +163,37 @@ function Discretizacion() {
   };
 
   // Calcular la ganancia de información al dividir en un punto específico
-  const calculateInformationGain = (values: number[], classes: number[], splitPoint: number) => {
-    const totalEntropy = calculateEntropy(classes);
+  const calculateInformationGain = (data: AttributeValueAndClass[], splitPoint: number) => {
+    if (!data || data.length === 0) {
+      return 0;
+    }
+
+    const classValues = data.map(item => item.classLabel);
+    const totalEntropy = calculateEntropy(classValues);
 
     // Dividir los datos en dos grupos basados en el punto de corte
-    const leftIndices = values.map((v, i) => v <= splitPoint ? i : -1).filter(i => i !== -1);
-    const rightIndices = values.map((v, i) => v > splitPoint ? i : -1).filter(i => i !== -1);
+    const leftGroup: AttributeValueAndClass[] = [];
+    const rightGroup: AttributeValueAndClass[] = [];
 
-    // Obtener las clases correspondientes a cada grupo
-    const leftClasses = leftIndices.map(i => classes[i]);
-    const rightClasses = rightIndices.map(i => classes[i]);
+    data.forEach(item => {
+      if (item.attributeValue <= splitPoint) {
+        leftGroup.push(item);
+      } else {
+        rightGroup.push(item);
+      }
+    });
+
+    // Si algún grupo está vacío, no es un buen punto de corte
+    if (leftGroup.length === 0 || rightGroup.length === 0) {
+      return 0;
+    }
 
     // Calcular la entropía ponderada después de la división
-    const leftWeight = leftClasses.length / classes.length;
-    const rightWeight = rightClasses.length / classes.length;
+    const leftWeight = leftGroup.length / data.length;
+    const rightWeight = rightGroup.length / data.length;
 
-    const leftEntropy = calculateEntropy(leftClasses);
-    const rightEntropy = calculateEntropy(rightClasses);
+    const leftEntropy = calculateEntropy(leftGroup.map(item => item.classLabel));
+    const rightEntropy = calculateEntropy(rightGroup.map(item => item.classLabel));
 
     const weightedEntropy = leftWeight * leftEntropy + rightWeight * rightEntropy;
 
@@ -149,26 +202,37 @@ function Discretizacion() {
   };
 
   // Encontrar el mejor punto de corte para un conjunto de valores
-  const findBestSplit = (values: number[], classes: number[]) => {
-    // Obtener valores únicos ordenados (posibles puntos de corte)
-    const uniqueValues = [...new Set(values)].sort((a, b) => a - b);
+  const findBestSplit = (data: AttributeValueAndClass[]) => {
+    if (!data || data.length < 2) {
+      return { splitPoint: NaN, informationGain: 0 };
+    }
 
-    // Consideramos los puntos medios entre valores adyacentes como posibles puntos de corte
-    const possibleSplits = [];
-    for (let i = 0; i < uniqueValues.length - 1; i++) {
-      possibleSplits.push((uniqueValues[i] + uniqueValues[i + 1]) / 2);
+    // Ordenar los datos por valor de atributo
+    const sortedData = [...data].sort((a, b) => a.attributeValue - b.attributeValue);
+
+    // Encontrar posibles puntos de corte (puntos medios entre valores adyacentes)
+    const possibleSplits: number[] = [];
+    for (let i = 0; i < sortedData.length - 1; i++) {
+      const currentInstance = sortedData[i];
+      const nextInstance = sortedData[i + 1];
+      
+      // Solo considerar puntos entre instancias de diferentes clases
+      if (currentInstance.classLabel !== nextInstance.classLabel && 
+          currentInstance.attributeValue !== nextInstance.attributeValue) {
+        possibleSplits.push((currentInstance.attributeValue + nextInstance.attributeValue) / 2);
+      }
     }
 
     if (possibleSplits.length === 0) {
-      return null;
+      return { splitPoint: NaN, informationGain: 0 };
     }
 
     // Evaluar cada posible punto de corte
     let bestSplit = possibleSplits[0];
-    let bestGain = calculateInformationGain(values, classes, possibleSplits[0]);
+    let bestGain = calculateInformationGain(sortedData, possibleSplits[0]);
 
     for (let i = 1; i < possibleSplits.length; i++) {
-      const gain = calculateInformationGain(values, classes, possibleSplits[i]);
+      const gain = calculateInformationGain(sortedData, possibleSplits[i]);
       if (gain > bestGain) {
         bestGain = gain;
         bestSplit = possibleSplits[i];
@@ -176,96 +240,159 @@ function Discretizacion() {
     }
 
     // Si la ganancia es muy pequeña, no vale la pena dividir
-    return bestGain > 0.01 ? bestSplit : null;
+    return bestGain > 0.01 ? { splitPoint: bestSplit, informationGain: bestGain } : { splitPoint: NaN, informationGain: 0 };
   };
 
   // Encontrar múltiples puntos de corte recursivamente
-  const findCutPoints = (values: number[], classes: number[], depth: number, maxDepth: number): number[] => {
-    if (depth >= maxDepth) {
+  const findCutPoints = (data: AttributeValueAndClass[], depth: number, maxDepth: number): number[] => {
+    // Criterios de paro
+    if (depth >= maxDepth || data.length < 2) {
       return [];
     }
 
-    const bestSplit = findBestSplit(values, classes);
+    // Verificar si todas las instancias tienen la misma clase
+    const firstClass = data[0].classLabel;
+    const allSameClass = data.every(item => item.classLabel === firstClass);
+    if (allSameClass) {
+      return [];
+    }
 
-    if (bestSplit === null) {
+    // Verificar si todos los valores de atributo son iguales
+    const firstValue = data[0].attributeValue;
+    const allSameValue = data.every(item => Math.abs(item.attributeValue - firstValue) < 1e-9);
+    if (allSameValue) {
+      return [];
+    }
+
+    // Encontrar el mejor punto de corte
+    const bestSplit = findBestSplit(data);
+    if (isNaN(bestSplit.splitPoint) || bestSplit.informationGain <= 0) {
       return [];
     }
 
     // Dividir los datos en dos grupos
-    const leftValues: number[] = [];
-    const rightValues: number[] = [];
-    const leftClasses: number[] = [];
-    const rightClasses: number[] = [];
+    const leftGroup: AttributeValueAndClass[] = [];
+    const rightGroup: AttributeValueAndClass[] = [];
 
-    for (let i = 0; i < values.length; i++) {
-      if (values[i] <= bestSplit) {
-        leftValues.push(values[i]);
-        leftClasses.push(classes[i]);
+    data.forEach(item => {
+      if (item.attributeValue <= bestSplit.splitPoint) {
+        leftGroup.push(item);
       } else {
-        rightValues.push(values[i]);
-        rightClasses.push(classes[i]);
+        rightGroup.push(item);
+      }
+    });
+
+    // Encontrar puntos de corte en los subconjuntos recursivamente
+    const leftCutPoints = findCutPoints(leftGroup, depth + 1, maxDepth);
+    const rightCutPoints = findCutPoints(rightGroup, depth + 1, maxDepth);
+
+    // Combinar todos los puntos de corte y ordenarlos
+    return [...leftCutPoints, bestSplit.splitPoint, ...rightCutPoints].sort((a, b) => a - b);
+  };
+
+  // Discretizar un atributo específico
+  const discretizeAttribute = (dataMatrix: number[][], attributeIndex: number, classColumnIndex: number): number[] => {
+    if (!dataMatrix || dataMatrix.length === 0 || attributeIndex < 0 || classColumnIndex < 0 || attributeIndex === classColumnIndex) {
+      console.error("Entrada inválida para discretización");
+      return [];
+    }
+
+    // Extraer los valores del atributo y las etiquetas de clase
+    const attributeData: AttributeValueAndClass[] = [];
+    
+    for (let i = 1; i < dataMatrix.length; i++) { // Empezamos desde 1 para omitir el encabezado
+      const row = dataMatrix[i];
+      if (row.length > attributeIndex && row.length > classColumnIndex) {
+        attributeData.push({
+          attributeValue: row[attributeIndex],
+          classLabel: row[classColumnIndex]
+        });
       }
     }
 
-    // Encontrar puntos de corte en los subconjuntos recursivamente
-    const leftCutPoints = findCutPoints(leftValues, leftClasses, depth + 1, maxDepth);
-    const rightCutPoints = findCutPoints(rightValues, rightClasses, depth + 1, maxDepth);
+    if (attributeData.length === 0) {
+      console.error(`No se encontraron datos válidos para la columna ${attributeIndex}`);
+      return [];
+    }
 
-    // Combinar todos los puntos de corte y ordenarlos
-    return [...leftCutPoints, bestSplit, ...rightCutPoints].sort((a, b) => a - b);
+    // Ordenar los datos para ser procesados
+    attributeData.sort((a, b) => a.attributeValue - b.attributeValue);
+
+    // Encontrar los puntos de corte recursivamente
+    const maxDepth = Math.log2(params.numBins);
+    const cutPoints = findCutPoints(attributeData, 0, maxDepth);
+
+    // Eliminar duplicados y ordenar
+    return [...new Set(cutPoints)].sort((a, b) => a - b);
   };
 
-  // Ejecutar la discretización basada en entropía
-  const runEntropyDiscretization = () => {
-    const targetColumn = params.targetColumn;
-    const numBins = params.numBins;
-    const data = params.data;
-
-    if (data.length === 0 || targetColumn >= data[0].length) {
+  // Ejecutar discretización para todos los atributos
+  const runDiscretization = () => {
+    const { data, targetColumn, normalizedColumns } = params;
+    
+    if (data.length === 0) {
       return;
     }
 
-    // Obtener la columna objetivo (clases)
-    const targetClasses = data.map(row => row[targetColumn]);
+    // Identificar qué columnas deben ser discretizadas (no la columna objetivo ni las ya normalizadas)
+    const columnsToDiscretize = Array.from(
+      { length: data[0].length }, 
+      (_, i) => i
+    ).filter(
+      i => i !== targetColumn && !normalizedColumns.includes(i)
+    );
 
-    // Para cada atributo (columna) excepto la columna objetivo
-    const cutPoints: number[][] = [];
-    const discretizedData = data.map(row => [...row]);
+    // Inicializar matriz de puntos de corte
+    const cutPoints: number[][] = Array(data[0].length).fill(null).map(() => []);
 
-    for (let col = 0; col < data[0].length; col++) {
-      if (col === targetColumn) {
-        cutPoints[col] = [];
-        continue;
+    // Discretizar cada atributo seleccionado
+    columnsToDiscretize.forEach(colIndex => {
+      cutPoints[colIndex] = discretizeAttribute(data, colIndex, targetColumn);
+    });
+
+    // Crear la matriz discretizada
+    const discretizedData = data.map((row, rowIndex) => {
+      // Mantener el encabezado intacto
+      if (rowIndex === 0) {
+        return [...row];
       }
 
-      // Obtener la columna actual
-      const columnValues = data.map(row => row[col]);
+      // Discretizar los valores en las filas de datos
+      return row.map((value, colIndex) => {
+        // No discretizar la columna objetivo ni las columnas ya normalizadas
+        if (colIndex === targetColumn || normalizedColumns.includes(colIndex)) {
+          return value;
+        }
 
-      // Encontrar puntos de corte usando entropía
-      const colCutPoints = findCutPoints(columnValues, targetClasses, 0, Math.log2(numBins));
-      cutPoints[col] = colCutPoints;
+        // Obtener los puntos de corte para esta columna
+        const colCutPoints = cutPoints[colIndex];
+        
+        // Si no hay puntos de corte, mantener el valor original
+        if (!colCutPoints || colCutPoints.length === 0) {
+          return value;
+        }
 
-      // Discretizar los valores usando los puntos de corte
-      for (let row = 0; row < data.length; row++) {
-        const value = data[row][col];
-
-        // Encontrar en qué intervalo cae el valor
-        let bin = 0;
-        for (let i = 0; i < colCutPoints.length; i++) {
-          if (value > colCutPoints[i]) {
-            bin = i + 1;
+        // Determinar el intervalo en el que cae el valor
+        let binIndex = 0;
+        for (const cutPoint of colCutPoints) {
+          if (value > cutPoint) {
+            binIndex++;
+          } else {
+            break;
           }
         }
 
-        discretizedData[row][col] = bin;
-      }
-    }
+        return binIndex;
+      });
+    });
 
+    // Actualizar el estado con los datos discretizados y los puntos de corte
     setParams({
       ...params,
-      discretizedData: discretizedData,
-      cutPoints: cutPoints
+      discretizedData,
+      cutPoints
     });
+
     setShowDiscretized(true);
   };
 
@@ -273,7 +400,7 @@ function Discretizacion() {
   const getValuesToShow = () => {
     const valuesToShow = showOnlyThisData.split(',').map((value) => parseInt(value));
     const filteredData: React.SetStateAction<number[][]> = [];
-
+    
     params.discretizedData.map((value, index) => {
       if (valuesToShow.includes(index)) {
         filteredData.push(value);
@@ -285,40 +412,38 @@ function Discretizacion() {
 
   return (
     <div>
-      <div >
+      <div>
         <h1>Discretizacion de Cotas Frontera</h1>
         <button onClick={() => navigate('/')}>Regresar</button>
       </div>
       <div>
         <label htmlFor="dataFile">Cargar Archivo</label>
-        <input
-          type="file"
-          id="dataFile"
+        <input 
+          type="file" 
+          id="dataFile" 
           accept=".txt"
           onChange={handleFileChange}
-
         />
       </div>
       <div className='buttons'>
         <div>
           <label htmlFor="numBins">Número máximo de intervalos</label>
-          <input
-            type="number"
+          <input 
+            type="number" 
             inputMode='numeric'
-            id="numBins"
+            id="numBins"  
             name="numBins"
             value={params.numBins}
             onChange={handleParamChange}
             min={2}
           />
         </div>
-
         <div>
           <label htmlFor="targetColumn">Columna objetivo (índice de clase)</label>
-          <input
-            type="number"
+          <input 
+            type="number" 
             inputMode='numeric'
-            id="targetColumn"
+            id="targetColumn" 
             name="targetColumn"
             value={params.targetColumn}
             onChange={handleParamChange}
@@ -326,9 +451,8 @@ function Discretizacion() {
             max={params.maxQuantityElements > 0 ? params.maxQuantityElements - 1 : 0}
           />
         </div>
-
         <button
-          onClick={runEntropyDiscretization}
+          onClick={runDiscretization}
           disabled={params.data.length === 0}>
           Ejecutar Discretización
         </button>
@@ -339,29 +463,29 @@ function Discretizacion() {
         </button>
 
         <button
-          onClick={saveFile}>
+          onClick={saveFile}
+          disabled={params.discretizedData.length === 0}>
           Guardar Archivo
         </button>
 
         <button
           onClick={() => setShowSomeData(!showSomeData)}
           disabled={params.discretizedData.length === 0}>
-          {showSomeData ? 'Mostrar Todos los Datos' : 'Filtrar Datos'}
+          {showSomeData ?  'Mostrar Todos los Datos' : 'Filtrar Datos'}
         </button>
-
       </div>
 
       {/* Mostrar Interfaz para Filtrar */}
-      {showSomeData && (
+      { showSomeData && (
         <div>
           <h2>Valores a Filtrar</h2>
           <div>
-            <label htmlFor="minValue">Valores a Mostrar</label>
-            <input
-              type="textarea"
+            <label htmlFor="valuesToShow">Valores a Mostrar</label>
+            <input 
+              type="textarea" 
               inputMode='numeric'
-              id="minValue"
-              name="minValue"
+              id="valuesToShow"  
+              name="valuesToShow"
               value={showOnlyThisData}
               onChange={(e) => setShowOnlyThisData(e.target.value)}
               min={0}
@@ -370,9 +494,9 @@ function Discretizacion() {
               onClick={getValuesToShow}>
               Filtrar
             </button>
-          </div>
+            </div>
         </div>
-      )
+        )
       }
 
       {/* Mostrar datos filtrados */}
@@ -386,29 +510,30 @@ function Discretizacion() {
                   <th>Conjunto</th>
                   {
                     filteredData[0].map((_, i) => (
-                      <th key={i}>V{i + 1}</th>
+                      <th key={i}>Valor {i + 1}</th>
                     ))
                   }
                 </tr>
               </thead>
               <tbody>
                 {
-                  filteredData.map((row, index) => (
-                    <tr key={index}>
-                      <td>{showOnlyThisData.split(',')[index]}</td>
-                      {row.map((value, i) => (
-                        <td key={i}>
-                          {value}
-                        </td>
-                      ))}
-                    </tr>
-                  ))
+                filteredData.map((row, index) => (
+                  <tr key={index}>
+                    <td>{showOnlyThisData.split(',')[index]}</td>
+                    {row.map((value, i) => (
+                      <td key={i}>
+                        {value}
+                      </td>
+                    ))}
+                  </tr>
+                ))
                 }
               </tbody>
             </table>
           </div>
         </div>
       )}
+      
       {/* Mostrar filtrado sin formato*/}
       {
         showSomeData && !showFormatedData && filteredData.length > 0 && (
@@ -428,59 +553,73 @@ function Discretizacion() {
         )
       }
 
-
-      {/* Mostrar datos discretizados */}
-      {showFormatedData && showDiscretized && !showSomeData && (
-        <div>
-          <h2>Datos Discretizados</h2>
+      {/* Mostrar Resultado de Discretización */}
+      {
+        showFormatedData && showDiscretized && !showSomeData && (
           <div>
-            <table>
-              <thead>
-                <tr>
-                  <th>Conjunto</th>
-                  {params.discretizedData[0] &&
-                    params.discretizedData[0].map((_, i) => (
-                      <th key={i}>A{i + 1}</th>
+            <h2>Datos Discretizados</h2>
+            <div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Conjunto</th>
+                    {params.discretizedData[0] && 
+                      Array.from({ length: params.discretizedData[0].length }, (_, i) => (
+                      <th key={i}>
+                        V{i + 1}
+                        {i === params.targetColumn && ' (Clase)'}
+                        {params.normalizedColumns.includes(i) && ' (Ya normalizada)'}
+                      </th>
                     ))}
-                </tr>
-              </thead>
-              <tbody>
-                {params.discretizedData.map((row, index) => (
-                  <tr key={index}>
-                    <td>{index}</td>
-                    {row.map((value, i) => (
-                      <td key={i}>
-                        {value}
+                  </tr>
+                </thead>
+                <tbody>
+                  {params.discretizedData.map((row, index) => (
+                    <tr key={index}>
+                      <td>{index}</td>
+                      {row.map((value, i) => (
+                        <td key={i}>
+                          {value}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <h3>Puntos de Corte</h3>
+            <div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Atributo</th>
+                    <th>Puntos de Corte</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {params.cutPoints.map((points, index) => (
+                    <tr key={index}>
+                      <td>V{index + 1}</td>
+                      <td>
+                        {points && points.length > 0 
+                          ? points.map(p => p.toFixed(2)).join(', ') 
+                          : (index === params.targetColumn 
+                            ? 'Columna de Clase' 
+                            : (params.normalizedColumns.includes(index) 
+                              ? 'Columna Ya Normalizada' 
+                              : 'N/A'))}
                       </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-          <h3>Puntos de Corte</h3>
-          <div>
-            <table>
-              <thead>
-                <tr>
-                  <th>Atributo</th>
-                  <th>Puntos de Corte</th>
-                </tr>
-              </thead>
-              <tbody>
-                {params.cutPoints.map((points, index) => (
-                  <tr key={index}>
-                    <td>A{index + 1}</td>
-                    <td>{points.map(p => p.toFixed(2)).join(', ') || 'N/A'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+        )
+      } 
+      
       {/* Mostrar datos discretizados sin formato */}
-      {showDiscretized && !showFormatedData && !showSomeData && (
+      {!showFormatedData && showDiscretized && !showSomeData && (
         <div>
           <h2>Datos Discretizados</h2>
           {params.discretizedData.map((row, index) => (
@@ -496,9 +635,7 @@ function Discretizacion() {
         </div>
       )}
 
-      {/* Mostrar datos omitidos */}
-
-      {/* Mostrar datos formateados */}
+      {/* Mostrar datos cargados */}
       {showData && showFormatedData && (
         <div>
           <h2>Archivo Cargado</h2>
@@ -509,11 +646,8 @@ function Discretizacion() {
                   <th>Conjunto</th>
                   {params.quantityConjuntos > 0 &&
                     Array.from({ length: params.maxQuantityElements }, (_, i) => (
-                      <th key={i}>V{i + 1}</th>
-                    ))}
-                  <th>Minimo</th>
-                  <th>Maximo</th>
-
+                    <th key={i}>V{i + 1}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -524,15 +658,7 @@ function Discretizacion() {
                       <td key={i}>
                         {value}
                       </td>
-                    ))
-                    }
-                    <td>
-                      {params.minData[index]}
-                    </td>
-                    <td>
-                      {params.maxData[index]}
-                    </td>
-
+                    ))}
                   </tr>
                 ))}
               </tbody>
@@ -544,9 +670,9 @@ function Discretizacion() {
       {!showFormatedData && showData && (
         <div>
           <h2>Archivo Cargado</h2>
-          {params.rawData.map((row: number[], index: number) => (
+          {params.rawData.map((row, index) => (
             <div key={index}>
-              {row.map((value: number, i: number) => (
+              {row.map((value, i) => (
                 <span key={i}>
                   {value}
                   {i < row.length - 1 && ', '}
@@ -557,7 +683,7 @@ function Discretizacion() {
         </div>
       )}
     </div>
-  )
+  );
 }
 
-export default Discretizacion
+export default Discretizacion;
