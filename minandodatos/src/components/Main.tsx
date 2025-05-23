@@ -20,8 +20,8 @@ function Main() {
             <button onClick={() => navigate('/k-nn')}>
                 K-NN
             </button>
-            <button onClick={() => navigate('/')}>
-                Handler
+            <button onClick={() => navigate('/old-min-max')}>
+                oldMinMax
             </button>
             <button onClick={() => navigate('/')}>
                 Handler
