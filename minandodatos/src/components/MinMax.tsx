@@ -11,8 +11,7 @@ interface paramsDataToPlay {
   maxValue: number;
   minData: number[];
   maxData: number[];
-  rowOmmited: number;
-  columnOmmited: number;
+  normalizedColumns: number[]; // Keep track of already normalized columns
 }
 
 function MinMax() {
@@ -34,8 +33,7 @@ function MinMax() {
     maxQuantityElements: 0,
     minData: [],
     maxData: [],
-    rowOmmited: 0,
-    columnOmmited: 0,
+    normalizedColumns: [], // Initialize the array
   });
 
   // Manejar la carga del archivo
@@ -47,35 +45,51 @@ function MinMax() {
         const fileContent = event.target?.result;
         if (typeof fileContent === 'string') {
           const rows = fileContent.split('\n');
-
-          paramsMinMax.rowOmmited = 1;
-          // console.log('paramsMinMax', paramsMinMax);
-
-          const rowOmmited = 1;
-          const columnOmmited = rows[0].split(',').length;
-          paramsMinMax.columnOmmited = columnOmmited;
-          const filteredRows = rows.map((row, rowIndex) => 
-            rowIndex !== rowOmmited - 1 
-              ? row.split(',').filter((_, colIndex) => colIndex !== columnOmmited - 1).join(',') 
-              : row
+          
+          // Check for already normalized columns (header values > 1)
+          const headerRow = rows[0].split(',').map(val => parseFloat(val));
+          const normalizedColumns = headerRow
+            .map((val, idx) => val > 1 ? idx : -1)
+            .filter(idx => idx !== -1);
+          
+          // Separate header from data
+          const dataRows = rows.slice(1);
+          
+          // Calculate min and max values for each data row - excluding normalized columns
+          const rowMinMaxValues = dataRows.map(row => {
+            const rowValues = row.split(',').map(val => parseFloat(val));
+            
+            // Filter values that are not in normalized columns
+            const filteredValues = rowValues.filter((val, idx) => 
+              !normalizedColumns.includes(idx) && !isNaN(val)
+            );
+            
+            return {
+              min: Math.min(...filteredValues),
+              max: Math.max(...filteredValues)
+            };
+          });
+          
+          const minData = rowMinMaxValues.map(item => item.min);
+          const maxData = rowMinMaxValues.map(item => item.max);
+          
+          // Parse all data including header
+          const parsedData = rows.map(row =>
+            row.split(',').map(num => parseFloat(num))
           );
-          // console.log('filteredRows', filteredRows);
-          const minData = filteredRows.map((row) => Math.min(...row.split(',').map((num) => parseFloat(num))));
-          const maxData = filteredRows.map((row) => Math.max(...row.split(',').map((num) => parseFloat(num))));
-          const parsedData = rows.map((row) =>
-            row.split(',').map((num) => parseFloat(num))
-          );
+          
           setData(parsedData);
-          setParamsMinMax({ ...paramsMinMax, 
-            data: parsedData, 
+          setParamsMinMax({
+            ...paramsMinMax,
+            data: parsedData,
             rawData: parsedData,
-            quantityConjuntos: parsedData.length, 
+            quantityConjuntos: parsedData.length,
             maxQuantityElements: parsedData[0].length,
             minData: minData,
-            maxData: maxData
+            maxData: maxData,
+            normalizedColumns: normalizedColumns
           });
           setShowData(true);
-          // console.log('Archivo cargado:', paramsMinMax);
         } else {
           console.error('Error al leer el archivo');
         }
@@ -90,10 +104,11 @@ function MinMax() {
     const parsedValue = parseInt(value);
 
     setParamsMinMax({
-          ...paramsMinMax,
-          [name]: parsedValue,
-        });
+      ...paramsMinMax,
+      [name]: parsedValue,
+    });
   };
+  
   // Guardar archivo
   const saveFile = () => {
     const data = paramsMinMax.evaluatedData.map((row) => row.join(',')).join('\n');
@@ -106,24 +121,55 @@ function MinMax() {
     URL.revokeObjectURL(url);
   };
 
+  // Update the minMaxLogic function to handle edge cases
+  function minMaxLogic(value: number, minA: number, maxA: number, newMaxA: number, newMinA: number) {
+    // Handle edge case where min equals max (to avoid division by zero)
+    if (minA === maxA) {
+      return newMinA; // or could return average: (newMaxA + newMinA) / 2
+    }
+    
+    // Formula MinMax
+    // v' = (v - minA) / (maxA - minA) * (newMaxA - newMinA) + newMinA
+    return ((value - minA) / (maxA - minA)) * (newMaxA - newMinA) + newMinA;
+  }
 
   const runMinMax = () => {
     const minValue = paramsMinMax.minValue;
     const maxValue = paramsMinMax.maxValue;
     const minData = paramsMinMax.minData;
     const maxData = paramsMinMax.maxData;
-    const rowOmmited = paramsMinMax.rowOmmited;
-    const columnOmmited = paramsMinMax.columnOmmited;
+    const normalizedColumns = paramsMinMax.normalizedColumns;
 
     const evaluatedData = paramsMinMax.data.map((row, rowIndex) => {
-      if (rowIndex === rowOmmited - 1) {
-      return paramsMinMax.rawData[rowIndex];
+      // Keep header row intact
+      if (rowIndex === 0) {
+        return paramsMinMax.rawData[rowIndex];
       }
+      
+      // For data rows, apply MinMax normalization
       return row.map((value, colIndex) => {
-      if (colIndex === columnOmmited - 1) {
-        return paramsMinMax.rawData[rowIndex][colIndex];
-      }
-      return parseFloat(minMaxLogic(value, minData[rowIndex], maxData[rowIndex], maxValue, minValue).toFixed(2));
+        // Skip normalization for already normalized columns
+        if (normalizedColumns.includes(colIndex)) {
+          return paramsMinMax.rawData[rowIndex][colIndex];
+        }
+        
+        // Get the min/max for this data row (adjust index since minData doesn't include header)
+        const rowMinValue = minData[rowIndex - 1]; 
+        const rowMaxValue = maxData[rowIndex - 1];
+        
+        // Only normalize if we have valid min/max values
+        if (isNaN(rowMinValue) || isNaN(rowMaxValue)) {
+          return value; // Keep original value if we can't normalize
+        }
+        
+        // Apply MinMax formula to other columns
+        return parseFloat(minMaxLogic(
+          value, 
+          rowMinValue,
+          rowMaxValue, 
+          maxValue, 
+          minValue
+        ).toFixed(2));
       });
     });
 
@@ -134,10 +180,11 @@ function MinMax() {
     setShowMinMax(true);
   }
 
+  // Rest of the functions
   const getValuesToShow = () => {
     const valuesToShow = showOnlyThisData.split(',').map((value) => parseInt(value));
     const filteredData: React.SetStateAction<number[][]> = [];
-    paramsMinMax.evaluatedData.map((value,index) => {
+    paramsMinMax.evaluatedData.map((value, index) => {
       if (valuesToShow.includes(index)) {
         filteredData.push(value);
       }
@@ -146,19 +193,12 @@ function MinMax() {
     if (filteredData.length > 0) {
       setFilteredData([]);
     }
-    console.log('filteredData', filteredData);
     setFilteredData(filteredData);
-  }
-
-  function minMaxLogic(value: number, minA: number, maxA: number, newMaxA: number, newMinA: number) {
-    // Formula MinMax
-    // v' = (v - minA) / (maxA - minA) (newMaxA - newMinA) + newMinA
-    return ((value - minA) / (maxA - minA)) * (newMaxA - newMinA) + newMinA;
   }
 
   return (
     <div>
-      <div >
+      <div>
         <h1>Normalizacion MinMax</h1>
         <button onClick={() => navigate('/')}>Regresar</button>
       </div>
@@ -194,32 +234,6 @@ function MinMax() {
             value={paramsMinMax.maxValue}
             onChange={handleParamChange}
             min={0}
-          />
-        </div>
-        <div>
-          <label htmlFor="rowOmmited">Omitir Fila <i>0 No omite nada</i></label>
-          <input 
-            type="number" 
-            inputMode='numeric'
-            id="rowOmmited" 
-            name="rowOmmited"
-            value={paramsMinMax.rowOmmited}
-            onChange={handleParamChange}
-            min={0}
-            max={paramsMinMax.rawData.length > 0 ? paramsMinMax.rawData.length : 0}
-          />
-        </div>
-        <div>
-          <label htmlFor="columnOmmited">Omitir Columna <i>0 No omite nada</i></label>
-          <input 
-            type="number" 
-            inputMode='numeric'
-            id="columnOmmited" 
-            name="columnOmmited"
-            value={paramsMinMax.columnOmmited}
-            onChange={handleParamChange}
-            min={0}
-            max={paramsMinMax.rawData.length > 0 ? paramsMinMax.rawData[0].length : 0}
           />
         </div>
         <button
@@ -351,7 +365,10 @@ function MinMax() {
                     <th>Conjunto</th>
                     {paramsMinMax.quantityConjuntos > 0 &&
                       Array.from({ length: paramsMinMax.maxQuantityElements }, (_, i) => (
-                      <th key={i}>V{i + 1}</th>
+                      <th key={i}>
+                        V{i + 1}
+                        {paramsMinMax.normalizedColumns.includes(i) && ' (Ya normalizada)'}
+                      </th>
                       ))}
                   </tr>
                 </thead>
@@ -375,51 +392,46 @@ function MinMax() {
 
 
       {/* Mostrar datos omitidos */}
-      
-      {/* Mostrar datos formateados */}
-      {showData && showFormatedData && (
-        <div>
-        <h2>Archivo Cargado</h2>
-        <div>
-          <table>
-            <thead>
-              <tr>
-                <th>Conjunto</th>
-                {paramsMinMax.quantityConjuntos > 0 &&
-                  Array.from({ length: paramsMinMax.maxQuantityElements }, (_, i) => (
-                  <th key={i}>V{i + 1}</th>
-                  ))}
-                  <th>Minimo</th>
-                  <th>Maximo</th>
-
+        {showData && showFormatedData && (
+          <div>
+          <h2>Archivo Cargado</h2>
+          <div>
+            <table>
+          <thead>
+            <tr>
+              <th>Conjunto</th>
+              {paramsMinMax.quantityConjuntos > 0 &&
+            Array.from({ length: paramsMinMax.maxQuantityElements }, (_, i) => (
+            <th key={i}>V{i + 1}</th>
+            ))}
+            <th>Minimo</th>
+            <th>Maximo</th>
+            </tr>
+          </thead>
+          <tbody>
+            {paramsMinMax.data.map((row, index) => (
+              <tr key={index}>
+            <td>{index}</td>
+            {row.map((value, i) => (
+              <td key={i}>
+                {value}
+              </td>
+            ))}
+            <td>
+              {index === 0 ? 0 : paramsMinMax.minData[index - 1]}
+            </td>
+            <td>
+              {index === 0 ? 0 : paramsMinMax.maxData[index - 1]}
+            </td>
               </tr>
-            </thead>
-            <tbody>
-              {paramsMinMax.data.map((row, index) => (
-                <tr key={index}>
-                  <td>{index}</td>
-                  {row.map((value, i) => (
-                    <td key={i}>
-                      {value}
-                    </td>
-                  ))
-                  }
-                  <td>
-                    {paramsMinMax.minData[index]}
-                  </td>
-                  <td>
-                    {paramsMinMax.maxData[index]}
-                  </td>
-
-                </tr>
-              ))}
-            </tbody>
-          </table>
+            ))}
+          </tbody>
+            </table>
+          </div>
         </div>
-      </div>
-      )}
+        )}
 
-      {!showFormatedData && showData && (
+        {!showFormatedData && showData && (
         <div>
           <h2>Archivo Cargado</h2>
           {paramsMinMax.rawData.map((row, index) => (
