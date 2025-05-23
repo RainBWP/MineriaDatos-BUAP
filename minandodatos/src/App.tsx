@@ -5,6 +5,7 @@ import Discretizacion from './components/Discretizacion'
 import KNN from './components/K-nn'
 import OldMinMax from './components/oldMinMax'
 import OldDiscretizacion from './components/oldDiscretizacion'
+import Comparador from './components/Comparador'
 
 function App() {
   return (
@@ -16,6 +17,7 @@ function App() {
         <Route path="/k-nn" element={<KNN />} />
         <Route path="/old-min-max" element={<OldMinMax />} />
         <Route path="/old-discretizacion" element={<OldDiscretizacion />} />
+        <Route path="/comparador" element={<Comparador />} />
         
       </Routes>
     </Router>

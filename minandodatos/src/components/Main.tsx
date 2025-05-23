@@ -21,8 +21,8 @@ function Main() {
                 K-NN
             </button>
             
-            <button onClick={() => navigate('/')}>
-                Comparador K-NN con ...
+            <button onClick={() => navigate('/comparador')}>
+                Comparador K-NN con FeedForward
             </button>
             
             <button onClick={() => navigate('/old-min-max')}>
