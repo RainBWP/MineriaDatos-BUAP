@@ -12,148 +12,124 @@ interface KNNParams {
   trainingData: DataItem[];
   testData: DataItem[];
   accuracy: number;
-  columnTypes: ('numeric' | 'categorical')[];
-  classColumnIndex: number;
+  ranges: number[]; // Mantener solo para normalización
 }
 
+
 function KNN() {
-  const navigate = useNavigate();
   const [params, setParams] = useState<KNNParams>({
-    k: 3,
+    k: 5,
     trainingData: [],
     testData: [],
     accuracy: 0,
-    columnTypes: [],
-    classColumnIndex: -1,
+    ranges: [],
   });
   const [showResults, setShowResults] = useState(false);
   const [predictions, setPredictions] = useState<any[]>([]);
-  const [confusionMatrix, setConfusionMatrix] = useState<any[][]>([]);
+  const [ , setConfusionMatrix] = useState<any[][]>([]);
   const [trainingFileName, setTrainingFileName] = useState<string>('');
   const [testFileName, setTestFileName] = useState<string>('');
+  const navigate = useNavigate();
 
   // Detectar tipos de columna cuando cambian los datos
   useEffect(() => {
     if (params.trainingData.length > 0) {
-      detectColumnTypes();
     }
   }, [params.trainingData]);
 
-  // Función para detectar automáticamente los tipos de columna
-  const detectColumnTypes = () => {
-    const data = params.trainingData;
-    const newColumnTypes: ('numeric' | 'categorical')[] = [];
-    
-    if (data.length === 0 || data[0].features.length === 0) return;
-    
-    for (let i = 0; i < data[0].features.length; i++) {
-      let isNumeric = true;
-      
-      // Verificar si todos los valores son numéricos
-      for (let j = 0; j < Math.min(data.length, 10); j++) {
-        const value = data[j].features[i];
-        if (typeof value === 'string' && isNaN(Number(value)) && 
-            value !== '' && value !== 'NA' && value !== '?') {
-          isNumeric = false;
-          break;
-        }
-      }
-      
-      newColumnTypes.push(isNumeric ? 'numeric' : 'categorical');
-    }
-    
-    setParams({
-      ...params,
-      columnTypes: newColumnTypes
-    });
-  };
-
-  // Cargar archivo de entrenamiento
-  const handleTrainingFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setTrainingFileName(file.name);
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const fileContent = event.target?.result;
-        if (typeof fileContent === 'string') {
-          const parsedData = parseDataFile(fileContent, params.classColumnIndex);
-          setParams({
-            ...params,
-            trainingData: parsedData,
-          });
-        }
-      };
-      reader.readAsText(file);
-    }
-  };
-
-  // Cargar archivo de prueba
-  const handleTestFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setTestFileName(file.name);
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const fileContent = event.target?.result;
-        if (typeof fileContent === 'string') {
-          const parsedData = parseDataFile(fileContent, params.classColumnIndex);
-          setParams({
-            ...params,
-            testData: parsedData,
-          });
-        }
-      };
-      reader.readAsText(file);
-    }
-  };
-
-  // Parsear archivo de datos
-  const parseDataFile = (fileContent: string, classColumnIndex: number): DataItem[] => {
-    const lines = fileContent.trim().split('\n');
+  // Parsear datos como numéricos
+  const parseDataWithHeader = (
+    lines: string[]
+  ): DataItem[] => {
     const data: DataItem[] = [];
     
     lines.forEach(line => {
-      if (line.trim() === '') return; // Ignorar líneas vacías
+      if (line.trim() === '') return;
       
       const values = line.split(',').map(val => val.trim());
+      if (values.length === 0) return;
       
-      // Verificar que hay suficientes valores
-      if (classColumnIndex >= values.length) {
-        console.warn(`Advertencia: Índice de clase (${classColumnIndex}) fuera de rango`);
-        return;
-      }
+      const classColumnIndex = values.length - 1; // Siempre última columna
       
       const item: DataItem = {
         features: [],
         class: ''
       };
       
-      // Extraer características y clase
       for (let i = 0; i < values.length; i++) {
         const val = values[i];
-        
+        // Intentar convertir a número, pero preservar valor original si falla
+        const parsedVal = val === '' || val === 'NA' || val === '?' 
+          ? 0 // Valores faltantes como 0 para datos numéricos
+          : isNaN(Number(val)) ? val : Number(val);
+      
         if (i === classColumnIndex) {
-          item.class = isNaN(Number(val)) || val === '' ? val : Number(val);
+          item.class = parsedVal;
         } else {
-          // Agregar a features solo si no es la columna de clase
-          const parsedVal = isNaN(Number(val)) || val === '' ? val : Number(val);
           item.features.push(parsedVal);
         }
       }
-      
+    
       data.push(item);
     });
-    
+  
     return data;
   };
+
+  // Función para cargar archivos 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, isTraining: boolean) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    if (isTraining) setTrainingFileName(file.name);
+    else setTestFileName(file.name);
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const fileContent = event.target?.result;
+      if (typeof fileContent === 'string') {
+        const lines = fileContent.trim().split('\n');
+        
+        // Ignorar primera línea (header)
+        const parsedData = parseDataWithHeader(lines.slice(1));
+        
+        // Solo calcular rangos para datos de entrenamiento
+        if (isTraining) {
+          const ranges = calculateNumericRanges(parsedData);
+          setParams({
+            ...params,
+            ranges: ranges,
+            trainingData: parsedData
+          });
+        } else {
+          setParams({
+            ...params,
+            testData: parsedData
+          });
+        }
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  // Cargar archivo de entrenamiento
+  const handleTrainingFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    handleFileChange(e, true);
+  };
+
+  // Cargar archivo de prueba
+  const handleTestFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    handleFileChange(e, false);
+  };
+
 
   // Calcular distancia HEOM (Heterogeneous Euclidean-Overlap Metric)
   const calculateHEOM = (a: DataItem, b: DataItem): number => {
     let sum = 0;
     let validFeatures = 0;
     
-    for (let i = 0; i < a.features.length; i++) {
+    // Solo iterar sobre las características, no sobre la clase
+    for (let i = 0; i < Math.min(a.features.length, b.features.length); i++) {
       const featureA = a.features[i];
       const featureB = b.features[i];
       
@@ -162,50 +138,25 @@ function KNN() {
           featureB === '' || featureB === 'NA' || featureB === '?') {
         sum += 1; // Distancia máxima para valores faltantes
       } else {
-        const featureType = params.columnTypes[i];
+        // Intentar convertir a número
+        const numA = Number(featureA);
+        const numB = Number(featureB);
         
-        if (featureType === 'numeric') {
-          // Atributos numéricos: distancia euclidiana normalizada
-          const numA = Number(featureA);
-          const numB = Number(featureB);
-          
-          if (isNaN(numA) || isNaN(numB)) {
-            sum += featureA === featureB ? 0 : 1;
-          } else {
-            const range = getRange(params.trainingData, i);
-            const normalizedDiff = range !== 0 ? Math.abs(numA - numB) / range : 0;
-            sum += normalizedDiff * normalizedDiff;
-          }
+        if (!isNaN(numA) && !isNaN(numB)) {
+          // Ambos son numéricos, usar distancia normalizada
+          const range = params.ranges[i] || 1;
+          const normalizedDiff = range !== 0 ? Math.abs(numA - numB) / range : 0;
+          sum += normalizedDiff * normalizedDiff;
         } else {
-          // Atributos categóricos: métrica de overlap
+          // Al menos uno es categórico, usar comparación de igualdad
           sum += featureA === featureB ? 0 : 1;
         }
-        
-        validFeatures++;
       }
+      
+      validFeatures++;
     }
     
     return validFeatures > 0 ? Math.sqrt(sum / validFeatures) : 1;
-  };
-
-  // Obtener el rango de un atributo numérico
-  const getRange = (data: DataItem[], featureIndex: number): number => {
-    let min = Number.MAX_VALUE;
-    let max = Number.MIN_VALUE;
-    let found = false;
-    
-    data.forEach(item => {
-      const feature = item.features[featureIndex];
-      if (feature !== '' && feature !== 'NA' && feature !== '?' && 
-          !isNaN(Number(feature))) {
-        const value = Number(feature);
-        if (value < min) min = value;
-        if (value > max) max = value;
-        found = true;
-      }
-    });
-    
-    return found ? max - min : 1;
   };
 
   // Algoritmo k-NN 
@@ -240,18 +191,16 @@ function KNN() {
       }
     }
     
-    return !isNaN(Number(predictedClass)) ? Number(predictedClass) : predictedClass;
+    // Mantener mismo tipo que el original si es posible
+    return !isNaN(Number(predictedClass)) && typeof item.class === 'number' 
+      ? Number(predictedClass) 
+      : predictedClass;
   };
 
   // Ejecutar clasificación k-NN
   const runKNN = () => {
     if (params.trainingData.length === 0 || params.testData.length === 0) {
       alert('Por favor cargue los archivos de entrenamiento y prueba.');
-      return;
-    }
-    
-    if (params.classColumnIndex < 0) {
-      alert('Por favor indique la columna de clase.');
       return;
     }
     
@@ -338,31 +287,46 @@ function KNN() {
           k: k
         });
       }
-    } else if (name === 'classColumnIndex') {
-      const index = parseInt(value);
-      if (index >= 0) {
-        setParams({
-          ...params,
-          classColumnIndex: index
-        });
-      }
     }
   };
 
-  // Manejar cambios en los tipos de columna
-  const handleColumnTypeChange = (index: number, type: 'numeric' | 'categorical') => {
-    const newColumnTypes = [...params.columnTypes];
-    newColumnTypes[index] = type;
-    setParams({
-      ...params,
-      columnTypes: newColumnTypes
-    });
+  // Calcular rangos para normalización
+  const calculateNumericRanges = (data: DataItem[]): number[] => {
+    // Determinar número de features basado en primera instancia
+    if (data.length === 0 || data[0].features.length === 0) {
+      return [];
+    }
+    
+    const numFeatures = data[0].features.length;
+    const ranges: number[] = Array(numFeatures).fill(0);
+    
+    for (let j = 0; j < numFeatures; j++) {
+      let min = Number.MAX_VALUE;
+      let max = Number.MIN_VALUE;
+      let foundValue = false;
+      
+      data.forEach(item => {
+        if (j < item.features.length) {  // Asegurarse de que el índice es válido
+          const val = item.features[j];
+          if (val !== '' && !isNaN(Number(val))) {
+            const numVal = Number(val);
+            min = Math.min(min, numVal);
+            max = Math.max(max, numVal);
+            foundValue = true;
+          }
+        }
+      });
+      
+      ranges[j] = foundValue ? max - min : 1; // Usar 1 como valor por defecto para evitar divisiones por cero
+    }
+    
+    return ranges;
   };
 
   return (
     <div className="container">
+      <h1>K-NN</h1>
       <div className="header">
-        <h1>Clasificador k-NN con HEOM</h1>
         <button onClick={() => navigate('/')}>Regresar</button>
       </div>
       
@@ -380,19 +344,6 @@ function KNN() {
             onChange={handleParamChange}
           />
           <small>(Vecinos a considerar)</small>
-        </div>
-        
-        <div className="param-group">
-          <label htmlFor="classColumnIndex">Índice de columna de clase: </label>
-          <input
-            type="number"
-            id="classColumnIndex"
-            name="classColumnIndex"
-            min="0"
-            value={params.classColumnIndex >= 0 ? params.classColumnIndex : ''}
-            onChange={handleParamChange}
-          />
-          <small>(Primer índice es 0)</small>
         </div>
       </div>
       
@@ -422,43 +373,10 @@ function KNN() {
         </div>
       </div>
       
-      {params.trainingData.length > 0 && (
-        <div className="column-types">
-          <h2>Tipos de Atributos</h2>
-          <p>Verifique que los tipos detectados sean correctos:</p>
-          
-          <table>
-            <thead>
-              <tr>
-                <th>Atributo</th>
-                <th>Tipo</th>
-              </tr>
-            </thead>
-            <tbody>
-              {params.columnTypes.map((type, index) => (
-                <tr key={index}>
-                  <td>Atributo {index}</td>
-                  <td>
-                    <select
-                      title={`Select type for attribute ${index}`}
-                      value={type}
-                      onChange={(e) => handleColumnTypeChange(index, e.target.value as 'numeric' | 'categorical')}
-                    >
-                      <option value="numeric">Numérico</option>
-                      <option value="categorical">Categórico</option>
-                    </select>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      
       <div className="action-buttons">
         <button
           onClick={runKNN}
-          disabled={params.trainingData.length === 0 || params.testData.length === 0 || params.classColumnIndex < 0}
+          disabled={params.trainingData.length === 0 || params.testData.length === 0}
           className="run-button"
         >
           Ejecutar k-NN
@@ -475,7 +393,7 @@ function KNN() {
             <p><strong>Error:</strong> {(100 - params.accuracy).toFixed(2)}%</p>
           </div>
           
-          <div className="confusion-matrix">
+          {/* <div className="confusion-matrix">
             <h3>Matriz de Confusión</h3>
             <table>
               <thead>
@@ -495,7 +413,7 @@ function KNN() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </div> */}
           
           <div className="prediction-details">
             <h3>Detalle de Predicciones</h3>
