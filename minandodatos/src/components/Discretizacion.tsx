@@ -86,7 +86,10 @@ function Discretizacion() {
           const parsedData = rows.map(row =>
             row.split(',').map(num => parseFloat(num))
           );
-          
+
+          // Determinar la columna objetivo como la última columna
+          const lastColumnIndex = parsedData[0].length - 1;
+
           setData(parsedData);
           setParams({
             ...params,
@@ -97,7 +100,8 @@ function Discretizacion() {
             minData: minData,
             maxData: maxData,
             normalizedColumns: normalizedColumns,
-            cutPoints: Array(parsedData[0].length).fill([])
+            cutPoints: Array(parsedData[0].length).fill([]),
+            targetColumn: lastColumnIndex, // <-- Aquí se asigna la última columna
           });
           setShowData(true);
         } else {
@@ -438,7 +442,7 @@ function Discretizacion() {
             min={2}
           />
         </div>
-        <div>
+        {/* <div>
           <label htmlFor="targetColumn">Columna objetivo (índice de clase)</label>
           <input 
             type="number" 
@@ -450,7 +454,7 @@ function Discretizacion() {
             min={0}
             max={params.maxQuantityElements > 0 ? params.maxQuantityElements - 1 : 0}
           />
-        </div>
+        </div> */}
         <button
           onClick={runDiscretization}
           disabled={params.data.length === 0}>
