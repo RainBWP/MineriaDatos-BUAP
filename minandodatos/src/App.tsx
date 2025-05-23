@@ -4,6 +4,7 @@ import MinMax from './components/MinMax'
 import Discretizacion from './components/Discretizacion'
 import KNN from './components/K-nn'
 import OldMinMax from './components/oldMinMax'
+import OldDiscretizacion from './components/oldDiscretizacion'
 
 function App() {
   return (
@@ -14,6 +15,7 @@ function App() {
         <Route path="/discretizacion-fronteras" element={<Discretizacion />} />
         <Route path="/k-nn" element={<KNN />} />
         <Route path="/old-min-max" element={<OldMinMax />} />
+        <Route path="/old-discretizacion" element={<OldDiscretizacion />} />
         
       </Routes>
     </Router>

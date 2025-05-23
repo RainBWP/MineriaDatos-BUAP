@@ -20,17 +20,16 @@ function Main() {
             <button onClick={() => navigate('/k-nn')}>
                 K-NN
             </button>
+            
+            <button onClick={() => navigate('/')}>
+                Comparador K-NN con ...
+            </button>
+            
             <button onClick={() => navigate('/old-min-max')}>
                 oldMinMax
             </button>
-            <button onClick={() => navigate('/')}>
-                Handler
-            </button>
-            <button onClick={() => navigate('/')}>
-                Handler
-            </button>
-            <button onClick={() => navigate('/')}>
-                Handler
+            <button onClick={() => navigate('/old-discretizacion')}>
+                oldDiscretizacion
             </button>
         </div>
         </div>
